@@ -21,6 +21,19 @@ static int send_text(int client, const char *text) {
     return send(client, text, strlen(text), 0) < 0 ? -1 : 0;
 }
 
+static int receive_line(int client, char *line, size_t capacity) {
+    size_t length = 0;
+    while (length + 1 < capacity) {
+        char character;
+        const ssize_t received = recv(client, &character, 1, 0);
+        if (received <= 0) return -1;
+        if (character == '\n') break;
+        line[length++] = character;
+    }
+    line[length] = '\0';
+    return 0;
+}
+
 static void list_files(int client) {
     DIR *directory = opendir(ROOT);
     if (!directory) {
@@ -63,6 +76,25 @@ static void get_file(int client, const char *name) {
     fclose(file);
 }
 
+static void put_file(int client, const char *name, long size) {
+    if (!valid_name(name) || size < 0) { send_text(client, "ERR invalid-request\n"); return; }
+    char path[512];
+    snprintf(path, sizeof(path), "%s/%s", ROOT, name);
+    FILE *file = fopen(path, "wb");
+    if (!file) { send_text(client, "ERR cannot-open-output\n"); return; }
+    char buffer[BUFFER_SIZE];
+    long remaining = size;
+    while (remaining > 0) {
+        const size_t requested = remaining < (long)sizeof(buffer) ? (size_t)remaining : sizeof(buffer);
+        const ssize_t received = recv(client, buffer, requested, 0);
+        if (received <= 0) { fclose(file); remove(path); return; }
+        if (fwrite(buffer, 1, (size_t)received, file) != (size_t)received) { fclose(file); remove(path); return; }
+        remaining -= received;
+    }
+    fclose(file);
+    send_text(client, "OK\n");
+}
+
 int main(void) {
     mkdir(ROOT, 0755);
     int server = socket(AF_INET, SOCK_STREAM, 0);
@@ -81,14 +113,15 @@ int main(void) {
         int client = accept(server, NULL, NULL);
         if (client < 0) continue;
         char command[512] = {0};
-        ssize_t length = recv(client, command, sizeof(command) - 1, 0);
-        if (length > 0) {
-            command[length] = '\0';
-            char *newline = strchr(command, '\n');
-            if (newline) *newline = '\0';
+        if (receive_line(client, command, sizeof(command)) == 0) {
             if (strcmp(command, "LIST") == 0) list_files(client);
             else if (strncmp(command, "GET ", 4) == 0) get_file(client, command + 4);
-            else send_text(client, "ERR unknown-command\n");
+            else if (strncmp(command, "PUT ", 4) == 0) {
+                char name[256];
+                long size;
+                if (sscanf(command + 4, "%255s %ld", name, &size) == 2) put_file(client, name, size);
+                else send_text(client, "ERR invalid-request\n");
+            } else send_text(client, "ERR unknown-command\n");
         }
         close(client);
     }
