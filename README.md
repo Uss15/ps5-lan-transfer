@@ -24,6 +24,7 @@ The SDK and loader determine firmware compatibility. This repository does not cl
 
 ```sh
 export PS5_PAYLOAD_SDK=/opt/ps5-payload-sdk
+export LLVM_CONFIG=/usr/bin/llvm-config-18
 make
 ```
 
@@ -39,7 +40,7 @@ python3 host/ps5_transfer.py --host 192.168.1.50 get notes.txt --output notes.tx
 python3 host/ps5_transfer.py --host 192.168.1.50 put local.bin --name local.bin
 ```
 
-Set `PS5_TRANSFER_PORT` or pass `--port` to change the port. Files are stored under `/data/ps5-transfer` on the console.
+Pass `--port` to change the host-client port. Files are stored under `/data/ps5-transfer` on the console.
 
 ## Status
 
